@@ -45,8 +45,9 @@ def run_gsp_analysis(input_sequences: List[List[int]], min_support: int, verbose
     
     # Find frequent sequences
     print(f"\nFinding frequent sequences with minimum support = {min_support}")
+    start = time.time()
     freq_seqs = gsp.find_freq_seq()
-    
+    end = time.time()
     # Print results
     total_patterns = 0
     for k, sequences in freq_seqs.items():
@@ -55,10 +56,19 @@ def run_gsp_analysis(input_sequences: List[List[int]], min_support: int, verbose
         print(f"\nFrequent {k}-sequences ({num_patterns} patterns):")
         if num_patterns > 0:
             for seq in sequences:
-                support = gsp.count_support(seq)
-                print(f"Pattern {gsp.seq_to_str(seq)}: support = {support}")
+                # Convert sequence to appropriate numpy array format
+                if seq.ndim == 1:
+                    seq_array = seq
+                else:
+                    # Handle case where sequence might be flattened
+                    seq_array = seq.reshape(-1)
+                
+                support = gsp.count_support(seq_array)
+                print(f"Pattern {gsp.seq_to_str(seq_array)}: support = {support}")
     
     print(f"\nTotal number of frequent patterns found: {total_patterns}")
+    print(f"\nTotal Runtime: {end-start:.4f} secs")
+
 
 def main():
     # Configure logging
@@ -71,10 +81,9 @@ def main():
     print(f"Loaded {len(sequences)} sequences")
     
     # Run GSP with different minimum support thresholds
-    min_supports = [40, 20]  # Adjust these values based on your needs
+    min_support = int(0.20 * len(sequences))  # Adjust these values based on your needs
     
-    for min_support in min_supports:
-        run_gsp_analysis(sequences, min_support)
+    run_gsp_analysis(sequences, min_support)
 
 if __name__ == "__main__":
     main()

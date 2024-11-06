@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import time
 import logging
 import numpy as np
@@ -85,6 +86,7 @@ def _is_subsequence(
 ) -> bool:
     """Check if target is a subsequence of sequence"""
     # remove padding
+    target = target[target != padding_value]
     sequence = sequence[sequence != padding_value]
     m, n = len(target), len(sequence)
     if m > n:
@@ -107,7 +109,7 @@ def _count_support_parallel(candidate: np.ndarray, sequences: np.ndarray) -> int
     support = 0
 
     # Parallel loop over sequences
-    for i in prange(len(sequences)):
+    for i in prange(sequences.shape[0]):
         if _is_subsequence(candidate, sequences[i]):
             support += 1
 
@@ -116,6 +118,7 @@ def _count_support_parallel(candidate: np.ndarray, sequences: np.ndarray) -> int
 
 @jit(nopython=True)
 def _get_unique_events(sequences: np.ndarray) -> np.ndarray:
+    """Get unique events excluding padding value (0)"""
     total_len = 0
     for i in range(len(sequences)):
         total_len += len(sequences[i])
@@ -126,9 +129,12 @@ def _get_unique_events(sequences: np.ndarray) -> np.ndarray:
     for i in range(len(sequences)):
         seq = sequences[i]
         for j in range(len(seq)):
-            flat[idx] = seq[j]
-            idx += 1
+            if seq[j] != 0:  # Skip padding values
+                flat[idx] = seq[j]
+                idx += 1
 
+    # Trim the flat array to actual size used
+    flat = flat[:idx]
     return np.unique(flat)
 
 
@@ -237,9 +243,14 @@ class GSP:
 
         self.frequent_seqs: Dict[int, np.ndarray] = {}
 
-    def count_support(self, sequence: np.ndarray) -> int:
+    def count_support(self, sequence: List[int]) -> int:
         """Count Support for a sequence"""
-        return _count_support_parallel(sequence, self.seqdb)
+        # Pad sequence to match database sequence length
+        padded_seq = np.zeros(
+            self.seqdb.shape[1], dtype=np.int64
+        )  # use same padding as seqdb
+        padded_seq[: len(sequence)] = sequence
+        return _count_support_parallel(padded_seq, self.seqdb)
 
     def find_freq_seq(self) -> Dict[int, np.ndarray]:
         """Find all frequent sequences"""
@@ -295,7 +306,7 @@ class GSP:
         minsup = 2
         sequences = [[1, 2, 3, 4], [2, 3, 4, 5], [1, 2, 4, 5]]
         gsp = GSP(sequences, min_support=minsup, verbose=False)
-        _ = gsp.count_support(np.array([1, 2], dtype=np.int64))
+        _ = gsp.count_support([1, 2])
         _ = gsp.find_freq_seq()
         if self.verbose:
             logging.info("Warmup finished")
@@ -313,6 +324,6 @@ if __name__ == "__main__":
     )
     sequences = [[1, 2, 3, 4], [2, 3, 4, 5], [1, 2, 4, 5], [1, 3, 7], [3, 1]]
     gsp = GSP(sequences, min_support=3, verbose=True)
-    candidate = np.array([1, 4])
+    candidate = [1, 4]
     support = gsp.count_support(candidate)
     print(gsp.find_freq_seq())

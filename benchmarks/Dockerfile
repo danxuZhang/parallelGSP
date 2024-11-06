@@ -1,26 +1,37 @@
 FROM rockylinux:9
 
+# Set working directory
 WORKDIR /app
 
+# Install dependencies
 RUN dnf update -y && \
+    dnf install -y epel-release && \
     dnf install -y \
-    java-11-openjdk-headless \
+    java-21-openjdk-headless \
     wget \
     git \
     python3 \
     python3-pip \
     && dnf clean all
 
-RUN wget http://www.philippe-fournier-viger.com/spmf/SPMF.jar -O spmf.jar
+# Verify Java version
+RUN java -version
 
-RUN git clone https://github.com/danxuZhang/parallelGSP.git \
-    && cd parallelGSP && pip install .
+# Download SPMF and install Python library
+RUN wget http://www.philippe-fournier-viger.com/spmf/SPMF.jar -O spmf.jar && \
+    git clone https://github.com/danxuZhang/parallelGSP.git && \
+    cd parallelGSP && \
+    pip install .
 
+# Create necessary directories
 RUN mkdir -p /app/data /app/output
 
+# Copy your files
 COPY FIFA.txt /app/data/
+COPY benchmarks.py /app/
+COPY spmf_run.sh /app/
 
-COPY benchmarks.py /app/data
-COPY spmf_run.sh /app/data
+# Make script executable
+RUN chmod +x /app/spmf_run.sh
 
-CMD [bash]
+CMD ["bash"]
