@@ -314,7 +314,7 @@ class GSP:
     @classmethod
     def seq_to_str(cls, seq: np.ndarray) -> str:
         assert seq.ndim == 1
-        s = ",".join(sorted(str(item) for item in seq))
+        s = ",".join(str(item) for item in seq)
         return "{" + s + "}"
 
 
