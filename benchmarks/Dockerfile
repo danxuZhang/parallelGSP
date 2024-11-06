@@ -28,10 +28,8 @@ RUN mkdir -p /app/data /app/output
 
 # Copy your files
 COPY FIFA.txt /app/data/
-COPY benchmarks.py /app/
-COPY spmf_run.sh /app/
-
-# Make script executable
-RUN chmod +x /app/spmf_run.sh
+COPY benchmarks.sh /app/
+COPY pgsp.py /app/
 
 CMD ["bash"]
+
