@@ -28,12 +28,16 @@ def run_gsp_analysis(
     # Find frequent sequences
     if verbose:
         print(f"\nFinding frequent sequences with minimum support = {min_support}")
+    start = time.time()
     freq_seqs = gsp.find_freq_seq()
-
+    end = time.time()
+    
+    cnt = 0
     # Write results to file
     with open(output_file, "w") as f:
         # Write results in specified format
         for k, sequences in freq_seqs.items():
+            cnt += len(sequences)
             if k == 1:
                 # Write 1-sequences
                 for seq in sequences:
@@ -45,12 +49,11 @@ def run_gsp_analysis(
                     support = gsp.count_support(seq)
                     pattern = " -1 ".join(str(x) for x in seq[seq != 0])
                     f.write(f"{pattern} -1 #SUP: {support}\n")
-
+    print(f"Found {cnt} frequent sequences in {end-start:.4f} secs")
 
 def load_sequences(filepath: str) -> List[List[int]]:
     """Load sequences from input file"""
     sequences = []
-    current_sequence = []
 
     with open(filepath, "r") as f:
         for line in f:
@@ -105,12 +108,9 @@ def main():
         print(f"Loaded {len(sequences)} sequences")
 
     # Run analysis
-    start_time = time.time()
     run_gsp_analysis(sequences, args.min_support_ratio, args.output_file, args.verbose)
-    end_time = time.time()
 
     if args.verbose:
-        print(f"Analysis completed in {end_time - start_time:.2f} seconds")
         print(f"Results written to {args.output_file}")
 
 

@@ -12,6 +12,7 @@ RUN dnf update -y && \
     git \
     python3 \
     python3-pip \
+    diffutils \
     && dnf clean all
 
 # Verify Java version
@@ -28,7 +29,8 @@ RUN mkdir -p /app/data /app/output
 
 # Copy your files
 COPY FIFA.txt /app/data/
-COPY benchmarks.sh /app/
+COPY benchmark.sh /app/
+RUN chmod +x /app/benchmark.sh
 COPY pgsp.py /app/
 
 CMD ["bash"]
