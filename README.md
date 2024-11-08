@@ -4,7 +4,7 @@ Parallel Implementation of Generalized Sequential Pattern Algorithm
 ## Installation
 
 ``` bash
-pip install git+https://github.com/username/repository.git@v1.0
+pip install git+https://github.com/danxuZhang/parallelGSP.git@v1.0
 ```
 
 ## Usage
