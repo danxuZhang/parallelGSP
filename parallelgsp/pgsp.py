@@ -256,10 +256,13 @@ class GSP:
         """Find all frequent sequences"""
         self.freq_seqs = {}
 
+        logging.info("Start finding frequent sequences...")
         start = time.time()
 
         # start with singletons
         candidates: np.ndarray = _get_unique_events(self.seqdb)  # shape (N,)
+        if self.verbose:
+            logging.info(f"Found {len(candidates)} candidate 1-sequences...")
         freq_1_seq = _prune_infrequent_1_sequences(candidates, self.minsup, self.seqdb)
         self.freq_seqs[1] = freq_1_seq
         if self.verbose:
@@ -268,6 +271,8 @@ class GSP:
         # base case: 2-sequences
         k = 2
         candidates: np.ndarray = _get_base_freq_seq(freq_1_seq)  # shape (N, 2)
+        if self.verbose:
+            logging.info(f"Found {len(candidates)} candidate 2-sequences...")
         freq_k_seq = _prune_infrequent_k_sequences(candidates, self.minsup, self.seqdb)
         self.freq_seqs[k] = freq_k_seq
         assert 2 == freq_k_seq.shape[1]
@@ -278,12 +283,14 @@ class GSP:
         while freq_k_seq.shape[0] > 0:
             assert k == freq_k_seq.shape[1]
             candidates = _get_next_freq_seq(freq_k_seq)  # shape (N, k+1)
+            if self.verbose:
+                logging.info(f"Found {len(candidates)} candidate {k}-sequences...")
             freq_k_seq = _prune_infrequent_k_sequences(
                 candidates, self.minsup, self.seqdb
             )
             assert k + 1 == freq_k_seq.shape[1]
             k += 1
-            if len(freq_k_seq) == 0:
+            if len(freq_k_seq) == 0 and self.verbose:
                 logging.info(f"No frequent {k}-sequence")
                 break
 
