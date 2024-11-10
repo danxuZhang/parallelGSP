@@ -31,13 +31,32 @@ def _list_to_ndarray(sequences: List[List[int]]) -> Tuple[np.ndarray, int]:
     return padded_sequences, 0  # always pad with 0
 
 
+def _to_support_dict(
+    sequences: np.ndarray, supports: np.ndarray
+) -> Dict[Tuple[int], int]:
+    """
+    Convert sequences and support arrays to a dictionary mapping sequences
+    to their support counts
+    """
+    support_dict = {}
+    for i in range(len(sequences)):
+        # Convert sequence to tuple so it can be used as dictionary key
+        if sequences[i].ndim == 0:  # scalar value
+            key = int(sequences[i])  # for 1-sequences
+        else:
+            # Convert to tuple and remove padding zeros
+            key = tuple(int(x) for x in sequences[i] if x != 0)
+        support_dict[key] = supports[i]
+    return support_dict
+
+
 @jit(nopython=True)
 def _prune_infrequent_1_sequences(
     candidates: np.ndarray, minsup: int, sequences: np.ndarray
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray]:
     """Prune infrequent 1-sequences"""
     if len(candidates) == 0:
-        return np.empty(0, dtype=candidates.dtype)
+        return np.empty(0, dtype=candidates.dtype), np.empty(0, dtype=np.int64)
 
     # count support for each candidate
     support_counts = np.zeros(len(candidates), dtype=np.int64)
@@ -48,21 +67,26 @@ def _prune_infrequent_1_sequences(
 
     frequent_indices = np.where(support_counts >= minsup)[0]
     frequent_sequences = np.empty(len(frequent_indices), dtype=candidates.dtype)
+    frequent_supports = np.empty(len(frequent_indices), dtype=np.int64)
 
     # copy frequent sequences
     for i in range(len(frequent_indices)):
-        frequent_sequences[i] = candidates[frequent_indices[i]]
+        idx = frequent_indices[i]
+        frequent_sequences[i] = candidates[idx]
+        frequent_supports[i] = support_counts[idx]
 
-    return frequent_sequences
+    return frequent_sequences, frequent_supports
 
 
 @jit(nopython=True)
 def _prune_infrequent_k_sequences(
     candidates: np.ndarray, minsup: int, sequences: np.ndarray
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray]:
     """Prune infrequent k-sequences (k>1)"""
     if len(candidates) == 0:
-        return np.empty((0, candidates.shape[1]), dtype=candidates.dtype)
+        return np.empty((0, candidates.shape[1]), dtype=candidates.dtype), np.empty(
+            0, dtype=np.int64
+        )
 
     support_counts = np.zeros(len(candidates), dtype=np.int64)
     for i in range(len(candidates)):
@@ -72,12 +96,15 @@ def _prune_infrequent_k_sequences(
     frequent_sequences = np.empty(
         (len(frequent_indices), candidates.shape[1]), dtype=candidates.dtype
     )
+    frequent_supports = np.empty(len(frequent_indices), dtype=np.int64)
 
     # Copy frequent sequences
     for i in range(len(frequent_indices)):
-        frequent_sequences[i] = candidates[frequent_indices[i]]
+        idx = frequent_indices[i]
+        frequent_sequences[i] = candidates[idx]
+        frequent_supports[i] = support_counts[idx]
 
-    return frequent_sequences
+    return frequent_sequences, frequent_supports
 
 
 @jit(nopython=True)
@@ -242,6 +269,7 @@ class GSP:
         self.verbose = verbose
 
         self.frequent_seqs: Dict[int, np.ndarray] = {}
+        self.frequent_sups: List[Dict[Tuple[int], int]] = []
 
     def count_support(self, sequence: List[int]) -> int:
         """Count Support for a sequence"""
@@ -252,19 +280,25 @@ class GSP:
         padded_seq[: len(sequence)] = sequence
         return _count_support_parallel(padded_seq, self.seqdb)
 
-    def find_freq_seq(self) -> Dict[int, np.ndarray]:
+    def find_freq_seq(
+        self,
+    ) -> Tuple[Dict[int, np.ndarray], List[Dict[Tuple[int], int]]]:
         """Find all frequent sequences"""
-        self.freq_seqs = {}
+        self.frequent_seqs = {}
 
-        logging.info("Start finding frequent sequences...")
+        if self.verbose:
+            logging.info("Start finding frequent sequences...")
         start = time.time()
 
         # start with singletons
         candidates: np.ndarray = _get_unique_events(self.seqdb)  # shape (N,)
         if self.verbose:
             logging.info(f"Found {len(candidates)} candidate 1-sequences...")
-        freq_1_seq = _prune_infrequent_1_sequences(candidates, self.minsup, self.seqdb)
-        self.freq_seqs[1] = freq_1_seq
+        freq_1_seq, freq_1_sup = _prune_infrequent_1_sequences(
+            candidates, self.minsup, self.seqdb
+        )
+        self.frequent_sups.append(_to_support_dict(freq_1_seq, freq_1_sup))
+        self.frequent_seqs[1] = freq_1_seq
         if self.verbose:
             logging.info(f"Found {len(freq_1_seq)} freq 1-sequences")
 
@@ -273,8 +307,11 @@ class GSP:
         candidates: np.ndarray = _get_base_freq_seq(freq_1_seq)  # shape (N, 2)
         if self.verbose:
             logging.info(f"Found {len(candidates)} candidate 2-sequences...")
-        freq_k_seq = _prune_infrequent_k_sequences(candidates, self.minsup, self.seqdb)
-        self.freq_seqs[k] = freq_k_seq
+        freq_k_seq, freq_k_sup = _prune_infrequent_k_sequences(
+            candidates, self.minsup, self.seqdb
+        )
+        self.frequent_sups.append(_to_support_dict(freq_k_seq, freq_k_sup))
+        self.frequent_seqs[k] = freq_k_seq
         assert 2 == freq_k_seq.shape[1]
         if self.verbose:
             logging.info(f"Found {len(freq_k_seq)} freq 2-sequences")
@@ -285,7 +322,7 @@ class GSP:
             candidates = _get_next_freq_seq(freq_k_seq)  # shape (N, k+1)
             if self.verbose:
                 logging.info(f"Found {len(candidates)} candidate {k}-sequences...")
-            freq_k_seq = _prune_infrequent_k_sequences(
+            freq_k_seq, freq_k_sup = _prune_infrequent_k_sequences(
                 candidates, self.minsup, self.seqdb
             )
             assert k + 1 == freq_k_seq.shape[1]
@@ -294,7 +331,8 @@ class GSP:
                 logging.info(f"No frequent {k}-sequence")
                 break
 
-            self.freq_seqs[k] = freq_k_seq
+            self.frequent_seqs[k] = freq_k_seq
+            self.frequent_sups.append(_to_support_dict(freq_k_seq, freq_k_sup))
             if self.verbose:
                 logging.info(f"Found {len(freq_k_seq)} freq {k}-sequences")
 
@@ -304,7 +342,7 @@ class GSP:
         if self.verbose:
             logging.info(f"Found all frequent sequences in {runtime:.4f} secs")
 
-        return self.freq_seqs
+        return self.frequent_seqs, self.frequent_sups
 
     def warmup(self):
         """Warmup to compile all JIT functions"""
@@ -317,6 +355,36 @@ class GSP:
         _ = gsp.find_freq_seq()
         if self.verbose:
             logging.info("Warmup finished")
+
+    def export_to_file(self, file_name: str):
+        """
+        Export frequent sequence with support to file
+        Format: "sup seq" in each line
+        Example: "10 1 3 2" - sequence {1, 3, 2} has support 10
+        """
+        if self.verbose:
+            logging.info(f"Writing frequent sequences with support to {file_name}")
+        cnt = 0
+        start = time.time()
+        with open(file_name, "w") as f:
+            for length in sorted(self.frequent_seqs.keys()):
+                sequences = self.frequent_seqs[length]
+                supports: Dict[Tuple[int], int] = self.frequent_sups[length - 1]
+
+                for seq in sequences:
+                    if length == 1:
+                        key: int = int(seq)  # for 1-sequences
+                        f.write(f"{supports[(key)]} {key}\n")
+                    else:
+                        # Remove padding zeros and convert to tuple
+                        key: Tuple[int] = tuple(int(x) for x in seq if x != 0)
+                        pattern = " ".join(str(x) for x in key)
+                        f.write(f"{supports[key]} {pattern}\n")
+                    cnt += 1
+
+        end = time.time()
+        if self.verbose:
+            logging.info(f"Wrote {cnt} records to {file_name} in {end-start:.4f} secs")
 
     @classmethod
     def seq_to_str(cls, seq: np.ndarray) -> str:
@@ -333,4 +401,7 @@ if __name__ == "__main__":
     gsp = GSP(sequences, min_support=3, verbose=True)
     candidate = [1, 4]
     support = gsp.count_support(candidate)
-    print(gsp.find_freq_seq())
+    seq, sup = gsp.find_freq_seq()
+    print(seq)
+    print(sup)
+    # gsp.export_to_file("output.txt")
